@@ -1,5 +1,5 @@
 //=============================================================================
-// rmmz_objects.js v1.0.2
+// rmmz_objects.js v1.5.0
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -88,6 +88,10 @@ Game_Temp.prototype.reserveCommonEvent = function(commonEventId) {
 
 Game_Temp.prototype.retrieveCommonEvent = function() {
     return $dataCommonEvents[this._commonEventQueue.shift()];
+};
+
+Game_Temp.prototype.clearCommonEventReservation = function() {
+    this._commonEventQueue.length = 0;
 };
 
 Game_Temp.prototype.isCommonEventReserved = function() {
@@ -405,6 +409,14 @@ Game_System.prototype.windowPadding = function() {
     return 12;
 };
 
+Game_System.prototype.windowOpacity = function() {
+    if ("windowOpacity" in $dataSystem.advanced) {
+        return $dataSystem.advanced.windowOpacity;
+    } else {
+        return 192;
+    }
+};
+
 //-----------------------------------------------------------------------------
 // Game_Timer
 //
@@ -443,6 +455,10 @@ Game_Timer.prototype.isWorking = function() {
 
 Game_Timer.prototype.seconds = function() {
     return Math.floor(this._frames / 60);
+};
+
+Game_Timer.prototype.frames = function() {
+    return this._frames;
 };
 
 Game_Timer.prototype.onExpire = function() {
@@ -3342,6 +3358,10 @@ Game_Battler.prototype.requestMotionRefresh = function() {
     this._motionRefresh = true;
 };
 
+Game_Battler.prototype.cancelMotionRefresh = function() {
+    this._motionRefresh = false;
+};
+
 Game_Battler.prototype.select = function() {
     this._selected = true;
 };
@@ -4706,7 +4726,7 @@ Game_Actor.prototype.makeActionList = function() {
 Game_Actor.prototype.makeAutoBattleActions = function() {
     for (let i = 0; i < this.numActions(); i++) {
         const list = this.makeActionList();
-        let maxValue = Number.MIN_VALUE;
+        let maxValue = -Number.MAX_VALUE;
         for (const action of list) {
             const value = action.evaluate();
             if (value > maxValue) {
@@ -5414,9 +5434,15 @@ Game_Party.prototype.allMembers = function() {
 };
 
 Game_Party.prototype.battleMembers = function() {
-    return this.allMembers()
-        .slice(0, this.maxBattleMembers())
-        .filter(actor => actor.isAppeared());
+    return this.allBattleMembers().filter(actor => actor.isAppeared());
+};
+
+Game_Party.prototype.hiddenBattleMembers = function() {
+    return this.allBattleMembers().filter(actor => actor.isHidden());
+};
+
+Game_Party.prototype.allBattleMembers = function() {
+    return this.allMembers().slice(0, this.maxBattleMembers());
 };
 
 Game_Party.prototype.maxBattleMembers = function() {
@@ -5656,6 +5682,10 @@ Game_Party.prototype.isAllDead = function() {
     } else {
         return false;
     }
+};
+
+Game_Party.prototype.isEscaped = function() {
+    return this.isAllDead() && this.hiddenBattleMembers().length > 0;
 };
 
 Game_Party.prototype.onPlayerWalk = function() {
@@ -6085,11 +6115,19 @@ Game_Map.prototype.isEventRunning = function() {
 };
 
 Game_Map.prototype.tileWidth = function() {
-    return 48;
+    if ("tileSize" in $dataSystem) {
+        return $dataSystem.tileSize;
+    } else {
+        return 48;
+    }
 };
 
 Game_Map.prototype.tileHeight = function() {
-    return 48;
+    return this.tileWidth();
+};
+
+Game_Map.prototype.bushDepth = function() {
+    return this.tileHeight() / 4;
 };
 
 Game_Map.prototype.mapId = function() {
@@ -6333,11 +6371,11 @@ Game_Map.prototype.isOverworld = function() {
 };
 
 Game_Map.prototype.screenTileX = function() {
-    return Graphics.width / this.tileWidth();
+    return Math.round((Graphics.width / this.tileWidth()) * 16) / 16;
 };
 
 Game_Map.prototype.screenTileY = function() {
-    return Graphics.height / this.tileHeight();
+    return Math.round((Graphics.height / this.tileHeight()) * 16) / 16;
 };
 
 Game_Map.prototype.adjustX = function(x) {
@@ -7269,7 +7307,7 @@ Game_CharacterBase.prototype.refreshBushDepth = function() {
         !this.isJumping()
     ) {
         if (!this.isMoving()) {
-            this._bushDepth = 12;
+            this._bushDepth = $gameMap.bushDepth();
         }
     } else {
         this._bushDepth = 0;
@@ -7841,6 +7879,7 @@ Game_Character.prototype.processRouteEnd = function() {
     } else if (this._moveRouteForcing) {
         this._moveRouteForcing = false;
         this.restoreMoveRoute();
+        this.setMovementSuccess(false);
     }
 };
 
@@ -8188,11 +8227,11 @@ Game_Player.prototype.isCollided = function(x, y) {
 };
 
 Game_Player.prototype.centerX = function() {
-    return (Graphics.width / $gameMap.tileWidth() - 1) / 2.0;
+    return ($gameMap.screenTileX() - 1) / 2;
 };
 
 Game_Player.prototype.centerY = function() {
-    return (Graphics.height / $gameMap.tileHeight() - 1) / 2.0;
+    return ($gameMap.screenTileY() - 1) / 2;
 };
 
 Game_Player.prototype.center = function(x, y) {
@@ -9872,6 +9911,12 @@ Game_Interpreter.prototype.command108 = function(params) {
     return true;
 };
 
+// Skip
+Game_Interpreter.prototype.command109 = function() {
+    this.skipBranch();
+    return true;
+};
+
 // Conditional Branch
 Game_Interpreter.prototype.command111 = function(params) {
     let result = false;
@@ -9917,10 +9962,11 @@ Game_Interpreter.prototype.command111 = function(params) {
             break;
         case 3: // Timer
             if ($gameTimer.isWorking()) {
+                const sec = $gameTimer.frames() / 60;
                 if (params[2] === 0) {
-                    result = $gameTimer.seconds() >= params[1];
+                    result = sec >= params[1];
                 } else {
-                    result = $gameTimer.seconds() <= params[1];
+                    result = sec <= params[1];
                 }
             }
             break;
@@ -10095,7 +10141,7 @@ Game_Interpreter.prototype.command119 = function(params) {
         const command = this._list[i];
         if (command.code === 118 && command.parameters[0] === labelName) {
             this.jumpTo(i);
-            return;
+            break;
         }
     }
     return true;
@@ -11267,7 +11313,8 @@ Game_Interpreter.prototype.pluginCommand = function() {
 
 // Plugin Command
 Game_Interpreter.prototype.command357 = function(params) {
-    PluginManager.callCommand(this, params[0], params[1], params[3]);
+    const pluginName = Utils.extractFileName(params[0]);
+    PluginManager.callCommand(this, pluginName, params[1], params[3]);
     return true;
 };
 
